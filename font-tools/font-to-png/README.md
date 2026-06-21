@@ -2,7 +2,7 @@
 
 > Export every glyph in a `.ttf` or `.otf` font to individual PNG files with a transparent background.
 
-Works with any TTF/OTF font. SMuFL fonts like [Bravura](https://github.com/steinbergmedia/bravura) are fully supported — SMuFL glyphs in the Private Use Area (U+E000–U+F8FF) are read directly from the font's own cmap with no external `glyphnames.json` needed.
+Works with any TTF/OTF font. SMuFL fonts are fully supported — SMuFL glyphs in the Private Use Area (U+E000–U+F8FF) are read directly from the font's own cmap with no external `glyphnames.json` needed.
 
 ---
 
@@ -19,57 +19,50 @@ Works with any TTF/OTF font. SMuFL fonts like [Bravura](https://github.com/stein
 
 ---
 
-## 📋 Requirements
-
-- Python 3.10+
-- `fonttools`
-- `Pillow`
-- `rich`
-
----
-
 ## 🚀 Installation
+
+Requires Python 3.10+.
 
 ```bash
 git clone <repo-url>
-cd font_utils
+cd font_utils/font-tools/font-to-png
 make install
 ```
 
-This creates a `.venv` virtualenv and installs all dependencies automatically.
+This creates a `.venv` virtualenv and installs all dependencies (`fonttools`, `Pillow`, `rich`) automatically.
 
 ---
 
-## ⚡ Quick Start
+## 🛠️ How to use
 
-The recommended way is via a config file — it keeps your settings reusable and version-controllable.
+### With a config file (recommended)
 
-### 1. Generate a config template
+A config file keeps your settings reusable and version-controllable.
+
+#### 1. Generate a template
 
 ```bash
 make create-config CONFIG=my_config.json
 ```
 
-This writes a blank template:
+#### 2. Fill in your settings
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `font_path` | `""` | Path to a `.ttf` or `.otf` font file |
+| `out` | `"glyphs"` | Output directory for PNG files |
+| `size` | `null` | Fixed square canvas size in px — `null` uses dynamic sizing |
+| `padding` | `20` | Padding in px around each glyph (dynamic sizing only) |
+| `uniform_scale` | `false` | Render all glyphs at the same font size on a shared canvas |
+| `px_per_em` | `200` | Font size in px when `uniform_scale` is enabled |
+| `canvas` | `400` | Shared canvas size in px when `uniform_scale` is enabled |
+| `whitelist` | `null` | List of glyph names to render, or a path to a `.txt` file — `null` renders all glyphs |
+
+Example filled config:
 
 ```json
 {
-  "font_path": "",
-  "out": "glyphs",
-  "size": null,
-  "padding": 20,
-  "uniform_scale": false,
-  "px_per_em": 200,
-  "canvas": 400,
-  "whitelist": null
-}
-```
-
-### 2. Fill in your settings
-
-```json
-{
-  "font_path": "~/fonts/Bravura.otf",
+  "font_path": "~/fonts/example.otf",
   "out": "./output",
   "uniform_scale": true,
   "px_per_em": 200,
@@ -78,7 +71,7 @@ This writes a blank template:
 }
 ```
 
-### 3. Run
+#### 3. Run
 
 ```bash
 make run-config CONFIG=my_config.json
@@ -86,24 +79,16 @@ make run-config CONFIG=my_config.json
 
 ---
 
-## 🔧 CLI Usage
+### Via CLI flags
 
-If you prefer flags directly:
+Pass everything directly on the command line:
 
 ```bash
 python font_file_to_png.py <font_path> [options]
 ```
 
-### Arguments
-
-| Argument | Description |
-|---|---|
-| `font_path` | Path to a `.ttf` or `.otf` font file |
-
-### Options
-
 | Flag | Default | Description |
-|---|---|---|
+|------|---------|-------------|
 | `--out` | `glyphs/` | Output directory for PNG files |
 | `--size` | _dynamic_ | Fixed square canvas size in px |
 | `--padding` | `20` | Padding in px around each glyph (dynamic sizing only) |
@@ -116,6 +101,23 @@ python font_file_to_png.py <font_path> [options]
 
 ---
 
+### Via Makefile
+
+| Target | Description |
+|--------|-------------|
+| `make run` | Run with `FONT`, `OUT`, and optional `ARGS` |
+| `make run-config` | Run using a JSON config file (`CONFIG`) |
+| `make create-config` | Generate a blank JSON config template at `CONFIG` |
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FONT` | `~/fonts/example.otf` | Font path for `make run` |
+| `OUT` | `./output` | Output directory for `make run` |
+| `ARGS` | _(empty)_ | Extra CLI flags for `make run` |
+| `CONFIG` | `config.json` | Config file for `make run-config` / `make create-config` |
+
+---
+
 ## 🖼️ Canvas Modes
 
 ### Dynamic sizing (default)
@@ -123,7 +125,7 @@ python font_file_to_png.py <font_path> [options]
 Each glyph is cropped to its own bounding box with uniform padding. PNG dimensions vary between glyphs.
 
 ```bash
-python font_file_to_png.py Bravura.otf --out ./glyphs --padding 20
+python font_file_to_png.py example.otf --out ./glyphs --padding 20
 ```
 
 ### Fixed canvas (`--size`)
@@ -131,7 +133,7 @@ python font_file_to_png.py Bravura.otf --out ./glyphs --padding 20
 All glyphs are rendered onto the same square canvas with the glyph centered. Useful when you need uniform image dimensions.
 
 ```bash
-python font_file_to_png.py Bravura.otf --out ./glyphs --size 256
+python font_file_to_png.py example.otf --out ./glyphs --size 256
 ```
 
 ### Uniform scale (`--uniform-scale`)
@@ -139,7 +141,7 @@ python font_file_to_png.py Bravura.otf --out ./glyphs --size 256
 All glyphs are rendered at the same font size on a shared canvas, preserving relative proportions. A notehead and a staff line will appear at the same scale relative to each other as they do inside the font's em-square.
 
 ```bash
-python font_file_to_png.py Bravura.otf --out ./glyphs --uniform-scale --px-per-em 200 --canvas 400
+python font_file_to_png.py example.otf --out ./glyphs --uniform-scale --px-per-em 200 --canvas 400
 ```
 
 ---
@@ -148,7 +150,7 @@ python font_file_to_png.py Bravura.otf --out ./glyphs --uniform-scale --px-per-e
 
 Restrict rendering to a specific set of glyph names. Glyphs not in the whitelist are silently skipped. Omit entirely to render all glyphs.
 
-### In a config file (recommended)
+### In a config file
 
 As a list:
 ```json
@@ -169,36 +171,15 @@ Set to `null` to render everything:
 
 Comma-separated inline:
 ```bash
-python font_file_to_png.py Bravura.otf --whitelist noteheadBlack,noteheadHalf,augmentationDot
+python font_file_to_png.py example.otf --whitelist noteheadBlack,noteheadHalf,augmentationDot
 ```
 
 From a text file:
 ```bash
-python font_file_to_png.py Bravura.otf --whitelist my_glyphs.txt
+python font_file_to_png.py example.otf --whitelist my_glyphs.txt
 ```
 
 The script detects automatically whether the value is a file path or an inline list.
-
----
-
-## 🛠️ Makefile Reference
-
-| Target | Description |
-|---|---|
-| `make install` | Create `.venv` and install all dependencies |
-| `make run` | Run with `FONT`, `OUT`, and optional `ARGS` |
-| `make run-config` | Run using a JSON config file (`CONFIG`) |
-| `make create-config` | Generate a blank JSON config template at `CONFIG` |
-| `make clean` | Remove the `.venv` virtualenv |
-
-### Variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `FONT` | `~/Downloads/bravura.../Bravura.otf` | Font path for `make run` |
-| `OUT` | `./bravura` | Output directory for `make run` |
-| `ARGS` | _(empty)_ | Extra CLI flags for `make run` |
-| `CONFIG` | `config.json` | Config file for `make run-config` / `make create-config` |
 
 ---
 
@@ -213,23 +194,50 @@ The script detects automatically whether the value is a file path or an inline l
 
 ## 💡 Examples
 
+### Config file
+
+First generate a blank template:
+
 ```bash
-# → Recommended: use a config file
-make create-config CONFIG=bravura.json   # generate template
-# edit bravura.json ...
-make run-config CONFIG=bravura.json      # run
+make create-config CONFIG=example.json
+```
 
-# → CLI: all glyphs, dynamic sizing
-python font_file_to_png.py Bravura.otf --out ./glyphs
+Open `example.json`, fill in at least `font_path` and `out`, then run:
 
-# → CLI: fixed 256×256 canvas
-python font_file_to_png.py Bravura.otf --out ./glyphs --size 256
+```bash
+make run-config CONFIG=example.json
+```
 
-# → CLI: uniform scale, 400×400 canvas
-python font_file_to_png.py Bravura.otf --out ./glyphs --uniform-scale --canvas 400 --px-per-em 200
+### CLI — export all glyphs
 
-# → CLI: specific glyphs only
-python font_file_to_png.py Bravura.otf --out ./glyphs --whitelist noteheadBlack,noteheadHalf
+To export every glyph with each PNG sized to fit its own bounding box:
+
+```bash
+python font_file_to_png.py example.otf --out ./glyphs
+```
+
+### CLI — fixed canvas size
+
+To get uniform 256×256 images with each glyph centered:
+
+```bash
+python font_file_to_png.py example.otf --out ./glyphs --size 256
+```
+
+### CLI — preserve relative proportions
+
+To render all glyphs at the same font size so they stay proportional to each other:
+
+```bash
+python font_file_to_png.py example.otf --out ./glyphs --uniform-scale --canvas 400 --px-per-em 200
+```
+
+### CLI — export specific glyphs only
+
+To render only a subset of glyphs, pass their names as a comma-separated list:
+
+```bash
+python font_file_to_png.py example.otf --out ./glyphs --whitelist noteheadBlack,noteheadHalf
 ```
 
 ---
@@ -237,7 +245,7 @@ python font_file_to_png.py Bravura.otf --out ./glyphs --whitelist noteheadBlack,
 ## 📚 Dependencies
 
 | Package | Purpose |
-|---|---|
+|---------|---------|
 | [`fonttools`](https://github.com/fonttools/fonttools) | Read font cmap and glyph data |
 | [`Pillow`](https://python-pillow.org) | Render glyphs to PNG |
 | [`rich`](https://github.com/Textualize/rich) | Terminal UI, animated progress bar, colored output |
