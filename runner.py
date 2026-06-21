@@ -97,12 +97,15 @@ class RainbowPanel:
         self.pad_v, self.pad_h = padding
 
     def __rich_console__(self, console: Console, options) -> None:
-        width = max(options.max_width // 2, 60)
+        width = max(options.max_width // 2, 80)
+        left_pad = (options.max_width - width) // 2
+        pad = Segment(" " * left_pad) if left_pad > 0 else None
         phase = time.time() * 0.4
 
         inner_w = width - 2 - self.pad_h * 2
         content_lines = console.render_lines(self.renderable, options.update(width=inner_w), pad=True)
         height = 2 + 2 * self.pad_v + len(content_lines)
+        top_pad = max(0, (console.size.height - height) // 2)
         P = 2 * (width - 1) + 2 * (height - 1)
 
         def bc(ch: str, x: int, y: int, bold: bool = False, dim: bool = False) -> Segment:
@@ -120,6 +123,8 @@ class RainbowPanel:
         def h_border(y: int, left: str, mid: str, right: str, label: str = ""):
             is_top = (y == 0)
             inner = width - 2
+            if pad:
+                yield pad
             yield bc(left, 0, y)
             if label:
                 label_str = f" {label} "
@@ -138,11 +143,16 @@ class RainbowPanel:
             yield bc(right, width - 1, y)
             yield Segment.line()
 
+        for _ in range(top_pad):
+            yield Segment.line()
+
         row = 0
         yield from h_border(row, "╭", "─", "╮", self.title)
         row += 1
 
         for _ in range(self.pad_v):
+            if pad:
+                yield pad
             yield bc("│", 0, row)
             yield Segment(" " * (width - 2))
             yield bc("│", width - 1, row)
@@ -150,6 +160,8 @@ class RainbowPanel:
             row += 1
 
         for line in content_lines:
+            if pad:
+                yield pad
             yield bc("│", 0, row)
             yield Segment(" " * self.pad_h)
             yield from line
@@ -159,6 +171,8 @@ class RainbowPanel:
             row += 1
 
         for _ in range(self.pad_v):
+            if pad:
+                yield pad
             yield bc("│", 0, row)
             yield Segment(" " * (width - 2))
             yield bc("│", width - 1, row)
