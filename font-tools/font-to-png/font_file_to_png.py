@@ -215,7 +215,7 @@ def render_glyph(font_path, glyph_name, codepoint, out_dir, padding=20, fixed_si
 
     img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    draw.text((draw_x, draw_y), char, font=img_font, fill=(0, 0, 0, 255))
+    draw.text((draw_x, draw_y), char, font=img_font, fill=(255, 255, 255, 255))
 
     out_path = os.path.join(out_dir, safe_filename(glyph_name) + ".png")
     img.save(out_path)
