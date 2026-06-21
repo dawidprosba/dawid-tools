@@ -26,6 +26,7 @@ import sys
 import termios
 import tty
 import time
+from datetime import datetime
 from rich.console import Console, Group
 from rich.live import Live
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, MofNCompleteColumn
@@ -298,10 +299,11 @@ class ExportRenderer:
         self.logs: list[str] = []
         self.done = False
         self.success = False
+        self.finished_at: datetime | None = None
 
     @property
     def footer(self) -> str:
-        return "Enter / Esc to return" if self.done else "running…"
+        return "r re-run   Enter / Esc back" if self.done else "running…"
 
     def __rich_console__(self, console: Console, options) -> None:
         phase = time.time() * 0.3
@@ -340,6 +342,12 @@ class ExportRenderer:
         if self.done:
             t.append("  ✓ done\n" if self.success else "  ✗ failed\n",
                      style="bold green" if self.success else "bold red")
+            if self.finished_at:
+                ts = self.finished_at.strftime("  finished at %H:%M:%S on %Y-%m-%d\n")
+                n = len(ts)
+                for i, ch in enumerate(ts):
+                    r2, g2, b2 = _pride_color(phase + i / n * 0.5)
+                    t.append(ch, style=Style(color=f"rgb({r2},{g2},{b2})"))
         else:
             r, g, b = _pride_color(phase)
             t.append("  ● running…\n", style=Style(color=f"rgb({r},{g},{b})", bold=True))
@@ -361,6 +369,7 @@ class ExportRenderer:
             self.logs.append(f"Error: {e}")
             self.success = False
         finally:
+            self.finished_at = datetime.now()
             self.done = True
 
 

@@ -14,6 +14,7 @@ import termios
 import threading
 import time
 import tty
+from datetime import datetime
 from pathlib import Path
 
 from rich.console import Console
@@ -207,7 +208,7 @@ def discover_tools() -> list[dict]:
             req_path = str((p.parent / data["requirements"]).resolve())
             data["_req_path"] = req_path
             data["_installed"] = _check_installed(req_path)
-            data.setdefault("scenarios", []).insert(0, {
+            data.setdefault("scenarios", []).append({
                 "name": "install",
                 "description": "Install Python dependencies into the active environment",
                 "command": [sys.executable, "-m", "pip", "install", "-r", req_path],
@@ -245,6 +246,7 @@ class Runner:
         self.run_progress: tuple[int, int] | None = None
         self.run_current: str = ""
         self.run_renderer: object | None = None
+        self.last_ran_at: datetime | None = None
         self.file_pick_list: list[str] = []
         self.file_pick_idx = 0
         self.path_input: str = ""
@@ -401,6 +403,7 @@ class Runner:
         ).start()
 
     def start_run(self) -> None:
+        self.last_ran_at = datetime.now()
         if self.current_scenario.get("type") in ("json-form", "edit-json-form"):
             self._run_json_form()
             return
@@ -543,9 +546,21 @@ class Runner:
                 elif self.run_status == "done":
                     footer = "r re-run   Enter / Esc back"
                     body.append("  ✓ done\n", style="bold green")
+                    if self.last_ran_at:
+                        ts = self.last_ran_at.strftime("  ran at %H:%M:%S on %Y-%m-%d\n")
+                        n = len(ts)
+                        for i, ch in enumerate(ts):
+                            r2, g2, b2 = _pride_color(phase + i / n * 0.5)
+                            body.append(ch, style=Style(color=f"rgb({r2},{g2},{b2})"))
                 else:
                     footer = "r re-run   Enter / Esc back"
                     body.append(f"  ✗ exited with code {self.run_returncode}\n", style="bold red")
+                    if self.last_ran_at:
+                        ts = self.last_ran_at.strftime("  ran at %H:%M:%S on %Y-%m-%d\n")
+                        n = len(ts)
+                        for i, ch in enumerate(ts):
+                            r2, g2, b2 = _pride_color(phase + i / n * 0.5)
+                            body.append(ch, style=Style(color=f"rgb({r2},{g2},{b2})"))
 
         elif self.state == STATE_PARAMS:
             scenario = self.current_scenario
