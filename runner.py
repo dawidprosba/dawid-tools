@@ -9,6 +9,7 @@ import select
 import subprocess
 import sys
 import termios
+import threading
 import time
 import tty
 from pathlib import Path
@@ -25,6 +26,13 @@ REPO_ROOT = Path(__file__).parent
 STATE_TOOLS = "tools"
 STATE_SCENARIOS = "scenarios"
 STATE_PARAMS = "params"
+STATE_RUNNING = "running"
+
+ANSI_RE = re.compile(r'\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+
+def _strip_ansi(s: str) -> str:
+    return ANSI_RE.sub('', s)
 
 PRIDE_COLORS = [
     (228, 3,   3),
@@ -189,6 +197,38 @@ class Runner:
         self.params: dict[str, str] = {}
         self.param_idx = 0
         self.current_input = ""
+        self.output_lines: list[str] = []
+        self.run_status = ""  # "running" | "done" | "error"
+        self.run_returncode: int | None = None
+
+    def start_run(self) -> None:
+        cmd, cwd = self.build_command()
+        self.state = STATE_RUNNING
+        self.output_lines = []
+        self.run_status = "running"
+        self.run_returncode = None
+
+        def _worker() -> None:
+            try:
+                proc = subprocess.Popen(
+                    cmd, cwd=cwd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    stdin=subprocess.DEVNULL,
+                    text=True,
+                    bufsize=1,
+                )
+                for line in proc.stdout:
+                    self.output_lines.append(_strip_ansi(line.rstrip()))
+                proc.wait()
+                self.run_returncode = proc.returncode
+                self.run_status = "done" if proc.returncode == 0 else "error"
+            except Exception as e:
+                self.output_lines.append(f"Error: {e}")
+                self.run_status = "error"
+                self.run_returncode = -1
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def render(self) -> RainbowPanel:
         body = Text()
@@ -237,6 +277,23 @@ class Runner:
                 body.append("\n")
                 body.append(f"    {s.get('description', '')}\n", style="dim")
 
+        elif self.state == STATE_RUNNING:
+            scenario = self.current_scenario
+            title = f"{self.current_tool['name']} › {scenario['name']}"
+            for line in self.output_lines[-40:]:
+                body.append(line + "\n", style="dim")
+            body.append("\n")
+            if self.run_status == "running":
+                footer = "running…"
+                r, g, b = _pride_color(phase)
+                body.append("  ● running…\n", style=Style(color=f"rgb({r},{g},{b})", bold=True))
+            elif self.run_status == "done":
+                footer = "Enter / Esc to return"
+                body.append("  ✓ done\n", style="bold green")
+            else:
+                footer = "Enter / Esc to return"
+                body.append(f"  ✗ exited with code {self.run_returncode}\n", style="bold red")
+
         elif self.state == STATE_PARAMS:
             scenario = self.current_scenario
             title = f"{self.current_tool['name']} › {scenario['name']}"
@@ -258,7 +315,7 @@ class Runner:
         return RainbowPanel(body, title=title, subtitle=footer, padding=(1, 2))
 
     def handle_key(self, key: str) -> str:
-        """Return 'quit', 'run', or '' to continue."""
+        """Return 'quit' or '' to continue."""
         if key == "\x03":
             return "quit"
 
@@ -293,7 +350,7 @@ class Runner:
                     self.current_input = self.params.get(params[0]["key"], "")
                     self.state = STATE_PARAMS
                 else:
-                    return "run"
+                    self.start_run()
 
         elif self.state == STATE_PARAMS:
             params = self.current_scenario.get("params", [])
@@ -303,12 +360,20 @@ class Runner:
                 self.params[params[self.param_idx]["key"]] = self.current_input
                 self.param_idx += 1
                 if self.param_idx >= len(params):
-                    return "run"
-                self.current_input = self.params.get(params[self.param_idx]["key"], "")
+                    self.start_run()
+                else:
+                    self.current_input = self.params.get(params[self.param_idx]["key"], "")
             elif key == "\x7f":
                 self.current_input = self.current_input[:-1]
             elif len(key) == 1 and key.isprintable():
                 self.current_input += key
+
+        elif self.state == STATE_RUNNING:
+            if self.run_status != "running":
+                if key in ("q", "Q"):
+                    return "quit"
+                elif key in ("\r", "\n", " ", "\x1b"):
+                    self.back_to_scenarios()
 
         return ""
 
@@ -330,36 +395,21 @@ class Runner:
             self.current_tool["_installed"] = _check_installed(self.current_tool["_req_path"])
 
 
-def run_tui(runner: Runner) -> str:
+def run_tui(runner: Runner) -> None:
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
-    result = ""
     try:
         tty.setcbreak(fd)
         with Live(runner.render(), refresh_per_second=20, console=console, screen=True) as live:
             while True:
                 key = read_key(fd)
                 if key is not None:
-                    action = runner.handle_key(key)
-                    if action in ("quit", "run"):
-                        result = action
+                    if runner.handle_key(key) == "quit":
                         break
                 live.update(runner.render())
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
         console.show_cursor(True)
-    return result
-
-
-def wait_for_keypress() -> None:
-    console.print("\n[dim]Press any key to return to the menu...[/]")
-    fd = sys.stdin.fileno()
-    old = termios.tcgetattr(fd)
-    try:
-        tty.setcbreak(fd)
-        os.read(fd, 1)
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
 def main() -> None:
@@ -368,18 +418,7 @@ def main() -> None:
         console.print("[red]No tools found. Add tool.json files to tool directories.[/]")
         sys.exit(1)
 
-    runner = Runner(tools)
-
-    while True:
-        action = run_tui(runner)
-        if action == "quit":
-            break
-
-        cmd, cwd = runner.build_command()
-        console.print(f"\n[dim]$ {' '.join(cmd)}[/]\n")
-        subprocess.run(cmd, cwd=cwd)
-        wait_for_keypress()
-        runner.back_to_scenarios()
+    run_tui(Runner(tools))
 
 
 if __name__ == "__main__":
