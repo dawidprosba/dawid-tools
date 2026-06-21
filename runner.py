@@ -1,0 +1,386 @@
+#!/usr/bin/env python3
+"""Interactive runner for dawid-tools — navigate and run tools without leaving the terminal."""
+
+import importlib.metadata
+import json
+import os
+import re
+import select
+import subprocess
+import sys
+import termios
+import time
+import tty
+from pathlib import Path
+
+from rich.console import Console
+from rich.live import Live
+from rich.segment import Segment
+from rich.style import Style
+from rich.text import Text
+
+console = Console()
+REPO_ROOT = Path(__file__).parent
+
+STATE_TOOLS = "tools"
+STATE_SCENARIOS = "scenarios"
+STATE_PARAMS = "params"
+
+PRIDE_COLORS = [
+    (228, 3,   3),
+    (255, 140, 0),
+    (255, 237, 0),
+    (0,   128, 38),
+    (0,   77,  255),
+    (117, 7,   135),
+]
+
+
+def _pride_color(t: float) -> tuple[int, int, int]:
+    t = t % 1.0
+    n = len(PRIDE_COLORS)
+    idx = t * n
+    lo = int(idx) % n
+    hi = (lo + 1) % n
+    f = idx - int(idx)
+    r = int(PRIDE_COLORS[lo][0] * (1 - f) + PRIDE_COLORS[hi][0] * f)
+    g = int(PRIDE_COLORS[lo][1] * (1 - f) + PRIDE_COLORS[hi][1] * f)
+    b = int(PRIDE_COLORS[lo][2] * (1 - f) + PRIDE_COLORS[hi][2] * f)
+    return r, g, b
+
+
+def _pride_stripe(t: float) -> tuple[int, int, int]:
+    return PRIDE_COLORS[int(t % 1.0 * len(PRIDE_COLORS)) % len(PRIDE_COLORS)]
+
+
+class RainbowPanel:
+    def __init__(self, renderable, title: str = "", subtitle: str = "", padding: tuple = (1, 2)):
+        self.renderable = renderable
+        self.title = title
+        self.subtitle = subtitle
+        self.pad_v, self.pad_h = padding
+
+    def __rich_console__(self, console: Console, options) -> None:
+        width = options.max_width
+        phase = time.time() * 0.4
+
+        inner_w = width - 2 - self.pad_h * 2
+        content_lines = console.render_lines(self.renderable, options.update(width=inner_w), pad=True)
+        height = 2 + 2 * self.pad_v + len(content_lines)
+        P = 2 * (width - 1) + 2 * (height - 1)
+
+        def bc(ch: str, x: int, y: int, bold: bool = False, dim: bool = False) -> Segment:
+            if y == 0:
+                perim = x
+            elif x == width - 1:
+                perim = (width - 1) + y
+            elif y == height - 1:
+                perim = 2 * (width - 1) + (height - 1) - x
+            else:
+                perim = 2 * (width - 1) + 2 * (height - 1) - y
+            r, g, b = _pride_stripe(perim / P - phase)
+            return Segment(ch, Style(color=f"rgb({r},{g},{b})", bold=bold, dim=dim))
+
+        def h_border(y: int, left: str, mid: str, right: str, label: str = ""):
+            is_top = (y == 0)
+            inner = width - 2
+            yield bc(left, 0, y)
+            if label:
+                label_str = f" {label} "
+                llen = len(label_str)
+                ln = (inner - llen) // 2
+                rn = inner - llen - ln
+                for i in range(ln):
+                    yield bc(mid, i + 1, y)
+                for i, char in enumerate(label_str):
+                    yield bc(char, ln + 1 + i, y, bold=is_top, dim=not is_top)
+                for i in range(rn):
+                    yield bc(mid, ln + llen + i + 1, y)
+            else:
+                for i in range(inner):
+                    yield bc(mid, i + 1, y)
+            yield bc(right, width - 1, y)
+            yield Segment.line()
+
+        row = 0
+        yield from h_border(row, "╭", "─", "╮", self.title)
+        row += 1
+
+        for _ in range(self.pad_v):
+            yield bc("│", 0, row)
+            yield Segment(" " * (width - 2))
+            yield bc("│", width - 1, row)
+            yield Segment.line()
+            row += 1
+
+        for line in content_lines:
+            yield bc("│", 0, row)
+            yield Segment(" " * self.pad_h)
+            yield from line
+            yield Segment(" " * self.pad_h)
+            yield bc("│", width - 1, row)
+            yield Segment.line()
+            row += 1
+
+        for _ in range(self.pad_v):
+            yield bc("│", 0, row)
+            yield Segment(" " * (width - 2))
+            yield bc("│", width - 1, row)
+            yield Segment.line()
+            row += 1
+
+        yield from h_border(row, "╰", "─", "╯", self.subtitle)
+
+
+def _check_installed(req_path: str) -> bool:
+    try:
+        with open(req_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                name = re.split(r"[>=<!;\s\[]", line)[0].strip()
+                if name:
+                    importlib.metadata.version(name)
+        return True
+    except (importlib.metadata.PackageNotFoundError, FileNotFoundError):
+        return False
+
+
+def discover_tools() -> list[dict]:
+    tools = []
+    for p in sorted(REPO_ROOT.rglob("tool.json")):
+        with open(p) as f:
+            data = json.load(f)
+        data["_dir"] = str(p.parent)
+        if "requirements" in data:
+            req_path = str((p.parent / data["requirements"]).resolve())
+            data["_req_path"] = req_path
+            data["_installed"] = _check_installed(req_path)
+            data.setdefault("scenarios", []).insert(0, {
+                "name": "install",
+                "description": "Install Python dependencies into the active environment",
+                "command": [sys.executable, "-m", "pip", "install", "-r", req_path],
+                "params": [],
+            })
+        else:
+            data["_installed"] = None  # no requirements — always ready
+        tools.append(data)
+    return tools
+
+
+def read_key(fd: int) -> str | None:
+    if not select.select([sys.stdin], [], [], 0.05)[0]:
+        return None
+    raw = os.read(fd, 1).decode("utf-8", errors="replace")
+    if raw == "\x1b" and select.select([sys.stdin], [], [], 0.05)[0]:
+        raw += os.read(fd, 4).decode("utf-8", errors="replace")
+    return raw
+
+
+class Runner:
+    def __init__(self, tools: list[dict]) -> None:
+        self.tools = tools
+        self.state = STATE_TOOLS
+        self.tool_idx = 0
+        self.scenario_idx = 0
+        self.current_tool: dict | None = None
+        self.current_scenario: dict | None = None
+        self.params: dict[str, str] = {}
+        self.param_idx = 0
+        self.current_input = ""
+
+    def render(self) -> RainbowPanel:
+        body = Text()
+        phase = time.time() * 0.3
+
+        if self.state == STATE_TOOLS:
+            title = "dawid-tools"
+            footer = "↑↓ navigate   Enter select   q quit"
+            for i, t in enumerate(self.tools):
+                sel = i == self.tool_idx
+                installed = t.get("_installed")
+                if sel:
+                    r, g, b = _pride_color(phase)
+                    body.append("▶ ", style=Style(color=f"rgb({r},{g},{b})", bold=True))
+                    body.append(t["name"], style="bold white")
+                else:
+                    body.append("  ")
+                    body.append(t["name"], style="dim")
+                if installed is True:
+                    body.append("  ✓ ready", style="green")
+                elif installed is False:
+                    body.append("  needs install", style="yellow dim")
+                body.append("\n")
+                body.append(f"    {t.get('description', '')}\n", style="dim")
+
+        elif self.state == STATE_SCENARIOS:
+            tool = self.current_tool
+            title = tool["name"]
+            footer = "↑↓ navigate   Enter select   Esc back   q quit"
+            if tool.get("_installed") is False:
+                body.append("  ⚠  not installed — run ", style="yellow")
+                body.append("install", style="bold yellow")
+                body.append(" first\n\n", style="yellow")
+            for i, s in enumerate(tool["scenarios"]):
+                sel = i == self.scenario_idx
+                is_install = s["name"] == "install"
+                if sel:
+                    r, g, b = _pride_color(phase)
+                    body.append("▶ ", style=Style(color=f"rgb({r},{g},{b})", bold=True))
+                    body.append(s["name"], style="bold white")
+                else:
+                    body.append("  ")
+                    body.append(s["name"], style="dim")
+                if is_install and tool.get("_installed") is True:
+                    body.append("  ✓", style="green")
+                body.append("\n")
+                body.append(f"    {s.get('description', '')}\n", style="dim")
+
+        elif self.state == STATE_PARAMS:
+            scenario = self.current_scenario
+            title = f"{self.current_tool['name']} › {scenario['name']}"
+            footer = "Enter confirm   Esc back"
+            for i, p in enumerate(scenario.get("params", [])):
+                label = p.get("prompt", p["key"])
+                if i < self.param_idx:
+                    body.append(f"  {label}: ", style="dim")
+                    body.append(self.params.get(p["key"], "") + "\n", style="green")
+                elif i == self.param_idx:
+                    r, g, b = _pride_color(phase)
+                    color = f"rgb({r},{g},{b})"
+                    body.append(f"  {label}: ", style="bold")
+                    body.append(self.current_input + "█\n", style=Style(color=color, bold=True))
+                else:
+                    body.append(f"  {label}: ", style="dim")
+                    body.append(p.get("default", "") + "\n", style="dim")
+
+        return RainbowPanel(body, title=title, subtitle=footer, padding=(1, 2))
+
+    def handle_key(self, key: str) -> str:
+        """Return 'quit', 'run', or '' to continue."""
+        if key == "\x03":
+            return "quit"
+
+        if self.state == STATE_TOOLS:
+            if key in ("q", "Q"):
+                return "quit"
+            elif key == "\x1b[A":
+                self.tool_idx = (self.tool_idx - 1) % len(self.tools)
+            elif key == "\x1b[B":
+                self.tool_idx = (self.tool_idx + 1) % len(self.tools)
+            elif key in ("\r", "\n"):
+                self.current_tool = self.tools[self.tool_idx]
+                self.scenario_idx = 0
+                self.state = STATE_SCENARIOS
+
+        elif self.state == STATE_SCENARIOS:
+            scenarios = self.current_tool["scenarios"]
+            if key == "\x1b":
+                self.state = STATE_TOOLS
+            elif key in ("q", "Q"):
+                return "quit"
+            elif key == "\x1b[A":
+                self.scenario_idx = (self.scenario_idx - 1) % len(scenarios)
+            elif key == "\x1b[B":
+                self.scenario_idx = (self.scenario_idx + 1) % len(scenarios)
+            elif key in ("\r", "\n"):
+                self.current_scenario = scenarios[self.scenario_idx]
+                params = self.current_scenario.get("params", [])
+                if params:
+                    self.params = {p["key"]: p.get("default", "") for p in params}
+                    self.param_idx = 0
+                    self.current_input = self.params.get(params[0]["key"], "")
+                    self.state = STATE_PARAMS
+                else:
+                    return "run"
+
+        elif self.state == STATE_PARAMS:
+            params = self.current_scenario.get("params", [])
+            if key == "\x1b":
+                self.state = STATE_SCENARIOS
+            elif key in ("\r", "\n"):
+                self.params[params[self.param_idx]["key"]] = self.current_input
+                self.param_idx += 1
+                if self.param_idx >= len(params):
+                    return "run"
+                self.current_input = self.params.get(params[self.param_idx]["key"], "")
+            elif key == "\x7f":
+                self.current_input = self.current_input[:-1]
+            elif len(key) == 1 and key.isprintable():
+                self.current_input += key
+
+        return ""
+
+    def build_command(self) -> tuple[list[str], str]:
+        cmd = []
+        for part in self.current_scenario["command"]:
+            if part in ("python3", "python"):
+                part = sys.executable
+            for k, v in self.params.items():
+                part = part.replace(f"{{{k}}}", v)
+            cmd.append(part)
+        return cmd, self.current_tool["_dir"]
+
+    def back_to_scenarios(self) -> None:
+        self.state = STATE_SCENARIOS
+        self.param_idx = 0
+        self.current_input = ""
+        if "_req_path" in self.current_tool:
+            self.current_tool["_installed"] = _check_installed(self.current_tool["_req_path"])
+
+
+def run_tui(runner: Runner) -> str:
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    result = ""
+    try:
+        tty.setcbreak(fd)
+        with Live(runner.render(), refresh_per_second=20, console=console, screen=True) as live:
+            while True:
+                key = read_key(fd)
+                if key is not None:
+                    action = runner.handle_key(key)
+                    if action in ("quit", "run"):
+                        result = action
+                        break
+                live.update(runner.render())
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        console.show_cursor(True)
+    return result
+
+
+def wait_for_keypress() -> None:
+    console.print("\n[dim]Press any key to return to the menu...[/]")
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)
+        os.read(fd, 1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+def main() -> None:
+    tools = discover_tools()
+    if not tools:
+        console.print("[red]No tools found. Add tool.json files to tool directories.[/]")
+        sys.exit(1)
+
+    runner = Runner(tools)
+
+    while True:
+        action = run_tui(runner)
+        if action == "quit":
+            break
+
+        cmd, cwd = runner.build_command()
+        console.print(f"\n[dim]$ {' '.join(cmd)}[/]\n")
+        subprocess.run(cmd, cwd=cwd)
+        wait_for_keypress()
+        runner.back_to_scenarios()
+
+
+if __name__ == "__main__":
+    main()
