@@ -541,10 +541,10 @@ class Runner:
                     r, g, b = _pride_color(phase)
                     body.append("  ● running…\n", style=Style(color=f"rgb({r},{g},{b})", bold=True))
                 elif self.run_status == "done":
-                    footer = "Enter / Esc to return"
+                    footer = "r re-run   Enter / Esc back"
                     body.append("  ✓ done\n", style="bold green")
                 else:
-                    footer = "Enter / Esc to return"
+                    footer = "r re-run   Enter / Esc back"
                     body.append(f"  ✗ exited with code {self.run_returncode}\n", style="bold red")
 
         elif self.state == STATE_PARAMS:
@@ -665,6 +665,9 @@ class Runner:
             if is_done:
                 if key in ("q", "Q"):
                     return "quit"
+                elif key in ("r", "R"):
+                    self.run_renderer = None
+                    self.start_run()
                 elif key in ("\r", "\n", " ", "\x1b"):
                     self.run_renderer = None
                     self.back_to_scenarios()
