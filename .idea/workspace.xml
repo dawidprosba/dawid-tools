@@ -11,7 +11,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="2d48ed94-aa31-4bec-933a-be19ee05a8d1" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/font-tools/font-to-png/font_file_to_png.py" beforeDir="false" afterPath="$PROJECT_DIR$/font-tools/font-to-png/font_file_to_png.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/runner.py" beforeDir="false" afterPath="$PROJECT_DIR$/runner.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -157,7 +157,7 @@
       <option name="presentableId" value="Default" />
       <updated>1782034805234</updated>
       <workItem from="1782034806828" duration="4996000" />
-      <workItem from="1782040484100" duration="2849000" />
+      <workItem from="1782040484100" duration="4396000" />
     </task>
     <servers />
   </component>
@@ -166,6 +166,9 @@
   </component>
   <component name="UnityCheckinConfiguration" checkUnsavedScenes="true" />
   <component name="UnityProjectConfiguration" hasMinimizedUI="false" />
+  <component name="UnknownFeatures">
+    <option featureType="com.intellij.fileTypeFactory" implementationName="*.py" />
+  </component>
   <component name="VcsManagerConfiguration">
     <option name="CLEAR_INITIAL_COMMIT_MESSAGE" value="true" />
   </component>

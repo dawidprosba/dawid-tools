@@ -9,6 +9,7 @@ import re
 import select
 import subprocess
 import sys
+import tempfile
 import termios
 import threading
 import time
@@ -28,7 +29,32 @@ STATE_TOOLS = "tools"
 STATE_SCENARIOS = "scenarios"
 STATE_PARAMS = "params"
 STATE_FILEPICK = "filepick"
+STATE_PATHPASTE = "pathpaste"
 STATE_RUNNING = "running"
+
+HISTORY_FILE = Path(tempfile.gettempdir()) / "dawid-tools-history.json"
+PASTE_ENTRY = "\x00paste"
+SEP_ENTRY = "\x00sep"
+
+
+def load_history() -> list[str]:
+    try:
+        with open(HISTORY_FILE) as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def save_to_history(path: str) -> None:
+    path = str(Path(path).resolve())
+    history = [p for p in load_history() if p != path]
+    history.insert(0, path)
+    try:
+        with open(HISTORY_FILE, "w") as f:
+            json.dump(history[:5], f, indent=2)
+    except Exception:
+        pass
 
 ANSI_RE = re.compile(r'\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
@@ -71,7 +97,7 @@ class RainbowPanel:
         self.pad_v, self.pad_h = padding
 
     def __rich_console__(self, console: Console, options) -> None:
-        width = options.max_width
+        width = max(options.max_width // 2, 60)
         phase = time.time() * 0.4
 
         inner_w = width - 2 - self.pad_h * 2
@@ -207,17 +233,37 @@ class Runner:
         self.run_renderer: object | None = None
         self.file_pick_list: list[str] = []
         self.file_pick_idx = 0
+        self.path_input: str = ""
 
     def _enter_file_pick(self) -> None:
         scenario = self.current_scenario
         tool_dir = Path(self.current_tool["_dir"])
         pattern = scenario.get("pattern", "*.json")
         exclude = set(scenario.get("exclude", []))
-        self.file_pick_list = sorted(
+        config_files = sorted(
             str(f) for f in tool_dir.glob(pattern) if f.name not in exclude
         )
+        history = load_history()
+
+        entries: list[str] = [PASTE_ENTRY]
+        if history:
+            entries.append(SEP_ENTRY)
+            entries.extend(history)
+        if config_files:
+            entries.append(SEP_ENTRY)
+            entries.extend(config_files)
+
+        self.file_pick_list = entries
         self.file_pick_idx = 0
         self.state = STATE_FILEPICK
+
+    def _next_pickable(self, idx: int, direction: int) -> int:
+        entries = self.file_pick_list
+        n = len(entries)
+        idx = (idx + direction) % n
+        while entries[idx] == SEP_ENTRY:
+            idx = (idx + direction) % n
+        return idx
 
     def _run_json_form(self) -> None:
         self.state = STATE_RUNNING
@@ -427,22 +473,44 @@ class Runner:
             scenario = self.current_scenario
             title = f"{self.current_tool['name']} › {scenario['name']}"
             footer = "↑↓ navigate   Enter select   Esc back   q quit"
-            if not self.file_pick_list:
+            has_real = any(e not in (PASTE_ENTRY, SEP_ENTRY) for e in self.file_pick_list)
+            if not has_real and len(self.file_pick_list) == 1:
                 body.append("  No config files found.\n", style="dim")
                 body.append("  Create one with ", style="dim")
                 body.append("create-config", style="bold white dim")
                 body.append(" first.\n", style="dim")
-            else:
-                for i, path in enumerate(self.file_pick_list):
-                    sel = i == self.file_pick_idx
-                    name = Path(path).name
+                body.append("\n")
+            for i, entry in enumerate(self.file_pick_list):
+                sel = i == self.file_pick_idx
+                if entry == SEP_ENTRY:
+                    body.append("  " + "─" * 30 + "\n", style="dim")
+                elif entry == PASTE_ENTRY:
+                    if sel:
+                        r, g, b = _pride_color(phase)
+                        body.append("▶ ", style=Style(color=f"rgb({r},{g},{b})", bold=True))
+                        body.append("Paste path to config…\n", style="bold white")
+                    else:
+                        body.append("  ")
+                        body.append("Paste path to config…\n", style="dim")
+                else:
+                    name = Path(entry).name
                     if sel:
                         r, g, b = _pride_color(phase)
                         body.append("▶ ", style=Style(color=f"rgb({r},{g},{b})", bold=True))
                         body.append(name + "\n", style="bold white")
+                        body.append(f"   {entry}\n", style="dim")
                     else:
                         body.append("  ")
                         body.append(name + "\n", style="dim")
+
+        elif self.state == STATE_PATHPASTE:
+            scenario = self.current_scenario
+            title = f"{self.current_tool['name']} › {scenario['name']}"
+            footer = "Enter confirm   Esc back"
+            r, g, b = _pride_color(phase)
+            color = f"rgb({r},{g},{b})"
+            body.append("  Path to config file:\n", style="bold")
+            body.append("  " + self.path_input + "█\n", style=Style(color=color, bold=True))
 
         elif self.state == STATE_RUNNING:
             title = f"{self.current_tool['name']} › {self.current_scenario['name']}"
@@ -548,16 +616,35 @@ class Runner:
             elif key in ("q", "Q"):
                 return "quit"
             elif key == "\x1b[A" and self.file_pick_list:
-                self.file_pick_idx = (self.file_pick_idx - 1) % len(self.file_pick_list)
+                self.file_pick_idx = self._next_pickable(self.file_pick_idx, -1)
             elif key == "\x1b[B" and self.file_pick_list:
-                self.file_pick_idx = (self.file_pick_idx + 1) % len(self.file_pick_list)
+                self.file_pick_idx = self._next_pickable(self.file_pick_idx, 1)
             elif key in ("\r", "\n") and self.file_pick_list:
                 picked = self.file_pick_list[self.file_pick_idx]
-                if self.current_scenario.get("type") == "edit-json-form":
-                    self._enter_edit_form(picked)
-                else:
-                    self.params = {"path": picked}
+                if picked == PASTE_ENTRY:
+                    self.path_input = ""
+                    self.state = STATE_PATHPASTE
+                elif picked != SEP_ENTRY:
+                    if self.current_scenario.get("type") == "edit-json-form":
+                        self._enter_edit_form(picked)
+                    else:
+                        save_to_history(picked)
+                        self.params = {"path": picked}
+                        self.start_run()
+
+        elif self.state == STATE_PATHPASTE:
+            if key == "\x1b":
+                self.state = STATE_FILEPICK
+            elif key in ("\r", "\n"):
+                path = self.path_input.strip()
+                if path:
+                    save_to_history(path)
+                    self.params = {"path": path}
                     self.start_run()
+            elif key == "\x7f":
+                self.path_input = self.path_input[:-1]
+            elif len(key) == 1 and (key.isprintable()):
+                self.path_input += key
 
         elif self.state == STATE_RUNNING:
             is_done = self.run_renderer.done if self.run_renderer else (self.run_status != "running")
