@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="CMakeProjectFlavorService">
+    <option name="flavorId" value="CMakePlainProjectFlavor" />
+  </component>
+  <component name="CMakeSettings">
+    <configurations />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="2d48ed94-aa31-4bec-933a-be19ee05a8d1" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/font-tools/font-to-png/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Makefile" beforeDir="false" afterPath="$PROJECT_DIR$/font-tools/font-to-png/Makefile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/font-tools/font-to-png/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/bravura_font.json" beforeDir="false" afterPath="$PROJECT_DIR$/font-tools/font-to-png/bravura_font.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/font_file_to_png.py" beforeDir="false" afterPath="$PROJECT_DIR$/font-tools/font-to-png/font_file_to_png.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/in/.gitkeep" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/font-tools/font-to-png/requirements.txt" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="CopilotPersistence">
+    <persistenceIdMap>
+      <entry key="_/Users/dawidp/dev/font_utils" value="3FRPFXKppVqzIzNn8wqBLbuyPnJ" />
+    </persistenceIdMap>
+  </component>
+  <component name="EmbeddingIndexingInfo">
+    <option name="cachedIndexableFilesCount" value="5255" />
+    <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="MetaFilesCheckinStateConfiguration" checkMetaFiles="true" />
+  <component name="NextEditCompletionFeaturesState">
+    <decayedCancelled>
+      <entry key="MS100" value="1.0" />
+      <entry key="MS500" value="1.0000000014797503" />
+      <entry key="S2" value="1.0063728885526066" />
+      <entry key="S5" value="1.1620312296320696" />
+      <entry key="S10" value="1.5382068301759293" />
+      <entry key="S30" value="2.2733879308258116" />
+      <entry key="S60" value="2.5930187223950956" />
+      <entry key="M2" value="2.786003387788523" />
+      <entry key="M5" value="3.0190195668148894" />
+      <entry key="M10" value="3.9536335446078947" />
+      <entry key="M15" value="5.708668422391051" />
+      <entry key="M30" value="11.481452354766587" />
+      <entry key="H1" value="18.531020854796534" />
+      <entry key="H2" value="24.17462793737079" />
+      <entry key="H4" value="27.76683412322148" />
+      <entry key="D1" value="31.24520328280068" />
+      <entry key="W1" value="31.890897845522726" />
+    </decayedCancelled>
+    <decayedSelected>
+      <entry key="MS100" value="0.0" />
+      <entry key="MS500" value="0.0" />
+      <entry key="S2" value="0.0" />
+      <entry key="S5" value="8.015210450170361E-215" />
+      <entry key="S10" value="8.952770981280387E-108" />
+      <entry key="S30" value="2.082372992543243E-36" />
+      <entry key="S60" value="1.5180184940108742E-18" />
+      <entry key="M2" value="1.4779588907263592E-9" />
+      <entry key="M5" value="4.2065933080531775E-4" />
+      <entry key="M10" value="0.028703648058270866" />
+      <entry key="M15" value="0.11783499972147478" />
+      <entry key="M30" value="0.48488211164733014" />
+      <entry key="H1" value="0.9844730079127519" />
+      <entry key="H2" value="1.4030869043116454" />
+      <entry key="H4" value="1.675132632642686" />
+      <entry key="D1" value="1.9417742609192237" />
+      <entry key="W1" value="1.9915762182254084" />
+    </decayedSelected>
+    <decayedShown>
+      <entry key="MS100" value="0.678302163723836" />
+      <entry key="MS500" value="0.9253044295053452" />
+      <entry key="S2" value="0.9871387132980387" />
+      <entry key="S5" value="1.1541676287516642" />
+      <entry key="S10" value="1.534121162911685" />
+      <entry key="S30" value="2.2719313316286365" />
+      <entry key="S60" value="2.592270196942991" />
+      <entry key="M2" value="2.7856143580778787" />
+      <entry key="M5" value="3.0191207072543214" />
+      <entry key="M10" value="3.9817973565818847" />
+      <entry key="M15" value="5.82572293338521" />
+      <entry key="M30" value="11.96524862383804" />
+      <entry key="H1" value="19.51451435514323" />
+      <entry key="H2" value="25.57704701828818" />
+      <entry key="H4" value="29.44157559170123" />
+      <entry key="D1" value="33.18690304988474" />
+      <entry key="W1" value="33.88246317430729" />
+    </decayedShown>
+  </component>
+  <component name="ProjectColorInfo"><![CDATA[{
+  "associatedIndex": 3,
+  "fromUser": false
+}]]></component>
+  <component name="ProjectId" id="3FRPFXKppVqzIzNn8wqBLbuyPnJ" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.cidr.known.project.marker": "true",
+    "RunOnceActivity.readMode.enableVisualFormatting": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "cidr.known.project.marker": "true",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
+    "copilot.chat.legacySessionMetadata.migrated": "true",
+    "git-widget-placeholder": "main",
+    "junie.onboarding.icon.badge.shown": "true",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "configurable.group.appearance",
+    "to.speed.mode.migration.done": "true",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="2d48ed94-aa31-4bec-933a-be19ee05a8d1" name="Changes" comment="" />
+      <created>1782034805234</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1782034805234</updated>
+      <workItem from="1782034806828" duration="4996000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="UnityCheckinConfiguration" checkUnsavedScenes="true" />
+  <component name="UnityProjectConfiguration" hasMinimizedUI="false" />
+  <component name="VcsManagerConfiguration">
+    <option name="CLEAR_INITIAL_COMMIT_MESSAGE" value="true" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <breakpoint enabled="true" type="DotNet_Exception_Breakpoints">
+          <properties exception="System.OperationCanceledException" breakIfHandledByOtherCode="false" displayValue="System.OperationCanceledException" />
+          <option name="timeStamp" value="1" />
+        </breakpoint>
+        <breakpoint enabled="true" type="DotNet_Exception_Breakpoints">
+          <properties exception="System.Threading.Tasks.TaskCanceledException" breakIfHandledByOtherCode="false" displayValue="System.Threading.Tasks.TaskCanceledException" />
+          <option name="timeStamp" value="2" />
+        </breakpoint>
+        <breakpoint enabled="true" type="DotNet_Exception_Breakpoints">
+          <properties exception="System.Threading.ThreadAbortException" breakIfHandledByOtherCode="false" displayValue="System.Threading.ThreadAbortException" />
+          <option name="timeStamp" value="3" />
+        </breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
+  </component>
+</project>

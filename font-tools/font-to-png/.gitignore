@@ -1,0 +1,9 @@
+.idea
+.git
+.venv
+.DS_Store
+*.txt
+output*
+*.otf
+*.ttf
+*.json
