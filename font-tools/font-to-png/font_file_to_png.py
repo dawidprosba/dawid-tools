@@ -177,13 +177,7 @@ def render_glyph(font_path, glyph_name, codepoint, out_dir, padding=20, fixed_si
                   uniform_scale=False, px_per_em=200, global_canvas=None):
     char = chr(codepoint)
 
-    if uniform_scale:
-        # Same font size (px_per_em) for every glyph -> consistent scale,
-        # so a notehead and a staff line stay proportioned to each other
-        # the same way they are inside the actual font's em-square.
-        img_font = ImageFont.truetype(font_path, size=px_per_em)
-    else:
-        img_font = ImageFont.truetype(font_path, size=int(upm * 0.75))
+    img_font = ImageFont.truetype(font_path, size=px_per_em)
 
     # Measure bounding box for this single character
     tmp_img = Image.new("RGBA", (10, 10), (0, 0, 0, 0))
