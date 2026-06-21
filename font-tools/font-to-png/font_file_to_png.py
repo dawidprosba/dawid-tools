@@ -233,6 +233,143 @@ def _resolve_whitelist(value) -> set[str] | None:
     return {name.strip() for name in value.split(",") if name.strip()}
 
 
+def run_export(config: dict, on_progress=None, on_log=None, on_current=None, base_dir=None) -> int:
+    """Export glyphs defined in config. Returns the count of PNGs written.
+
+    on_progress(current, total) — called before each glyph
+    on_current(glyph_name)      — called with the name of the glyph being rendered
+    on_log(msg)                 — called for skipped/error glyphs and final summary
+    base_dir                    — directory used to resolve relative paths in config
+    """
+    def _resolve(path: str) -> str:
+        path = os.path.expanduser(path)
+        if base_dir and not os.path.isabs(path):
+            return os.path.join(base_dir, path)
+        return path
+
+    font_path = _resolve(config.get("font_path", ""))
+    if not font_path:
+        raise ValueError("font_path is required in config")
+
+    out_dir = _resolve(config.get("out", "glyphs"))
+    size          = config.get("size")
+    padding       = config.get("padding", 20)
+    uniform_scale = config.get("uniform_scale", False)
+    px_per_em     = config.get("px_per_em", 200)
+    canvas        = config.get("canvas", 400)
+
+    os.makedirs(out_dir, exist_ok=True)
+
+    font     = TTFont(font_path)
+    upm      = font["head"].unitsPerEm if "head" in font else 1000
+    glyphs   = get_cmap_glyphs(font)
+    wl       = _resolve_whitelist(config.get("whitelist"))
+    if wl:
+        glyphs = [(n, cp) for n, cp in glyphs if n in wl]
+
+    total = len(glyphs)
+    count = 0
+    for i, (glyph_name, codepoint) in enumerate(glyphs):
+        if on_progress:
+            on_progress(i, total)
+        if on_current:
+            on_current(glyph_name)
+        try:
+            ok = render_glyph(
+                font_path, glyph_name, codepoint, out_dir,
+                padding=padding, fixed_size=size, upm=upm,
+                uniform_scale=uniform_scale, px_per_em=px_per_em,
+                global_canvas=canvas,
+            )
+            if ok:
+                count += 1
+        except Exception as e:
+            if on_log:
+                on_log(f"skipped {glyph_name} (U+{codepoint:04X}): {e}")
+
+    if on_progress:
+        on_progress(total, total)
+    if on_log:
+        on_log(f"Exported {count} / {total} glyphs → {out_dir}/")
+    return count
+
+
+class ExportRenderer:
+    """Rich renderable that owns the export UI inside the runner's rainbow panel."""
+
+    def __init__(self) -> None:
+        self.total = 0
+        self.current = 0
+        self.current_name = ""
+        self.logs: list[str] = []
+        self.done = False
+        self.success = False
+
+    @property
+    def footer(self) -> str:
+        return "Enter / Esc to return" if self.done else "running…"
+
+    def __rich_console__(self, console: Console, options) -> None:
+        phase = time.time() * 0.3
+        t = Text()
+
+        # Info line
+        t.append(f"  Found {self.total} glyphs to render\n\n", style="bold cyan")
+
+        # Rainbow progress bar
+        if self.total > 0:
+            bar_width = 40
+            filled = int(bar_width * self.current / self.total)
+            bar = Text()
+            for i in range(filled):
+                r, g, b = _pride_color(i / bar_width + phase)
+                bar.append("█", style=Style(color=f"rgb({r},{g},{b})"))
+            bar.append("░" * (bar_width - filled), style=Style(color="grey30"))
+            t.append("  ")
+            t.append_text(bar)
+            t.append(f"  {self.current}/{self.total}\n", style="dim")
+
+        # Current glyph
+        if self.current_name and not self.done:
+            t.append(f"  ↳ {self.current_name}\n", style="dim cyan")
+
+        t.append("\n")
+
+        # Logs (skips, errors, final summary)
+        for line in self.logs[-20:]:
+            t.append(f"  {line}\n", style="dim")
+
+        if self.logs:
+            t.append("\n")
+
+        # Status
+        if self.done:
+            t.append("  ✓ done\n" if self.success else "  ✗ failed\n",
+                     style="bold green" if self.success else "bold red")
+        else:
+            r, g, b = _pride_color(phase)
+            t.append("  ● running…\n", style=Style(color=f"rgb({r},{g},{b})", bold=True))
+
+        yield from console.render(t, options)
+
+    def run(self, config: dict, base_dir: str | None = None) -> None:
+        """Called in a background thread by the runner."""
+        try:
+            run_export(
+                config,
+                on_progress=lambda c, t: setattr(self, "current", c) or setattr(self, "total", t),
+                on_current=lambda n: setattr(self, "current_name", n),
+                on_log=lambda m: self.logs.append(m),
+                base_dir=base_dir,
+            )
+            self.success = True
+        except Exception as e:
+            self.logs.append(f"Error: {e}")
+            self.success = False
+        finally:
+            self.done = True
+
+
 CONFIG_TEMPLATE = {
     "font_path": "",
     "out": "glyphs",

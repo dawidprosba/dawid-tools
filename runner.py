@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Interactive runner for dawid-tools — navigate and run tools without leaving the terminal."""
 
+import importlib
 import importlib.metadata
 import json
 import os
@@ -201,6 +202,9 @@ class Runner:
         self.output_lines: list[str] = []
         self.run_status = ""  # "running" | "done" | "error"
         self.run_returncode: int | None = None
+        self.run_progress: tuple[int, int] | None = None
+        self.run_current: str = ""
+        self.run_renderer: object | None = None
         self.file_pick_list: list[str] = []
         self.file_pick_idx = 0
 
@@ -304,9 +308,44 @@ class Runner:
         self.current_input = self.params.get(params[start]["key"], "") if start < len(params) else ""
         self.state = STATE_PARAMS
 
+    def _run_python_call(self) -> None:
+        scenario = self.current_scenario
+        tool_dir = self.current_tool["_dir"]
+        if tool_dir not in sys.path:
+            sys.path.insert(0, tool_dir)
+
+        mod = importlib.import_module(scenario["module"])
+        renderer_cls = getattr(mod, scenario["renderer"])
+
+        config_path = self.params.get("path", "")
+        if not os.path.isabs(config_path):
+            config_path = os.path.join(tool_dir, config_path)
+        try:
+            with open(config_path) as f:
+                config = json.load(f)
+        except Exception as e:
+            self.output_lines = [f"Could not load config: {e}"]
+            self.run_status = "error"
+            self.run_returncode = -1
+            self.state = STATE_RUNNING
+            return
+
+        renderer = renderer_cls()
+        self.run_renderer = renderer
+        self.state = STATE_RUNNING
+
+        threading.Thread(
+            target=renderer.run,
+            kwargs={"config": config, "base_dir": tool_dir},
+            daemon=True,
+        ).start()
+
     def start_run(self) -> None:
         if self.current_scenario.get("type") in ("json-form", "edit-json-form"):
             self._run_json_form()
+            return
+        if "module" in self.current_scenario:
+            self._run_python_call()
             return
 
         cmd, cwd = self.build_command()
@@ -406,21 +445,25 @@ class Runner:
                         body.append(name + "\n", style="dim")
 
         elif self.state == STATE_RUNNING:
-            scenario = self.current_scenario
-            title = f"{self.current_tool['name']} › {scenario['name']}"
-            for line in self.output_lines[-40:]:
-                body.append(line + "\n", style="dim")
-            body.append("\n")
-            if self.run_status == "running":
-                footer = "running…"
-                r, g, b = _pride_color(phase)
-                body.append("  ● running…\n", style=Style(color=f"rgb({r},{g},{b})", bold=True))
-            elif self.run_status == "done":
-                footer = "Enter / Esc to return"
-                body.append("  ✓ done\n", style="bold green")
+            title = f"{self.current_tool['name']} › {self.current_scenario['name']}"
+            if self.run_renderer is not None:
+                footer = self.run_renderer.footer
+                body = self.run_renderer
             else:
-                footer = "Enter / Esc to return"
-                body.append(f"  ✗ exited with code {self.run_returncode}\n", style="bold red")
+                # Generic fallback for subprocess / json-form runs
+                for line in self.output_lines[-30:]:
+                    body.append(line + "\n", style="dim")
+                body.append("\n")
+                if self.run_status == "running":
+                    footer = "running…"
+                    r, g, b = _pride_color(phase)
+                    body.append("  ● running…\n", style=Style(color=f"rgb({r},{g},{b})", bold=True))
+                elif self.run_status == "done":
+                    footer = "Enter / Esc to return"
+                    body.append("  ✓ done\n", style="bold green")
+                else:
+                    footer = "Enter / Esc to return"
+                    body.append(f"  ✗ exited with code {self.run_returncode}\n", style="bold red")
 
         elif self.state == STATE_PARAMS:
             scenario = self.current_scenario
@@ -517,10 +560,12 @@ class Runner:
                     self.start_run()
 
         elif self.state == STATE_RUNNING:
-            if self.run_status != "running":
+            is_done = self.run_renderer.done if self.run_renderer else (self.run_status != "running")
+            if is_done:
                 if key in ("q", "Q"):
                     return "quit"
                 elif key in ("\r", "\n", " ", "\x1b"):
+                    self.run_renderer = None
                     self.back_to_scenarios()
 
         return ""
