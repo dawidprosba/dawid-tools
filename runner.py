@@ -26,6 +26,7 @@ REPO_ROOT = Path(__file__).parent
 STATE_TOOLS = "tools"
 STATE_SCENARIOS = "scenarios"
 STATE_PARAMS = "params"
+STATE_FILEPICK = "filepick"
 STATE_RUNNING = "running"
 
 ANSI_RE = re.compile(r'\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
@@ -200,8 +201,114 @@ class Runner:
         self.output_lines: list[str] = []
         self.run_status = ""  # "running" | "done" | "error"
         self.run_returncode: int | None = None
+        self.file_pick_list: list[str] = []
+        self.file_pick_idx = 0
+
+    def _enter_file_pick(self) -> None:
+        scenario = self.current_scenario
+        tool_dir = Path(self.current_tool["_dir"])
+        pattern = scenario.get("pattern", "*.json")
+        exclude = set(scenario.get("exclude", []))
+        self.file_pick_list = sorted(
+            str(f) for f in tool_dir.glob(pattern) if f.name not in exclude
+        )
+        self.file_pick_idx = 0
+        self.state = STATE_FILEPICK
+
+    def _run_json_form(self) -> None:
+        self.state = STATE_RUNNING
+        self.output_lines = []
+        self.run_status = "running"
+        self.run_returncode = None
+
+        def _worker() -> None:
+            try:
+                scenario = self.current_scenario
+                out_key = scenario.get("output_key", "path")
+                out_path = self.params.get(out_key, "config.json")
+                if not os.path.isabs(out_path):
+                    out_path = os.path.join(self.current_tool["_dir"], out_path)
+
+                config: dict = {}
+                for p in scenario.get("params", []):
+                    field = p.get("field")
+                    if not field:
+                        continue
+                    val = self.params.get(p["key"], p.get("default", ""))
+                    ptype = p.get("type", "str")
+                    if ptype == "int":
+                        config[field] = int(val) if val.strip() else 0
+                    elif ptype == "int?":
+                        config[field] = int(val) if val.strip() else None
+                    elif ptype == "bool":
+                        config[field] = val.strip().lower() in ("true", "1", "yes")
+                    elif ptype == "str?":
+                        config[field] = val.strip() or None
+                    elif ptype == "list?":
+                        stripped = val.strip()
+                        if not stripped:
+                            config[field] = None
+                        elif os.sep in stripped or stripped.endswith((".txt", ".csv")):
+                            config[field] = stripped  # file path — keep as string
+                        else:
+                            config[field] = [s.strip() for s in stripped.split(",") if s.strip()]
+                    else:
+                        config[field] = val
+
+                with open(out_path, "w") as f:
+                    json.dump(config, f, indent=2)
+
+                self.output_lines.append(f"Written: {out_path}")
+                self.run_status = "done"
+                self.run_returncode = 0
+            except Exception as e:
+                self.output_lines.append(f"Error: {e}")
+                self.run_status = "error"
+                self.run_returncode = -1
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _enter_edit_form(self, path: str) -> None:
+        try:
+            with open(path) as f:
+                existing = json.load(f)
+        except Exception:
+            existing = {}
+
+        scenario = self.current_scenario
+        output_key = scenario.get("output_key", "path")
+        params = scenario.get("params", [])
+
+        self.params = {}
+        for p in params:
+            key = p["key"]
+            field = p.get("field")
+            if key == output_key:
+                self.params[key] = path
+            elif field and field in existing:
+                val = existing[field]
+                if val is None:
+                    self.params[key] = ""
+                elif isinstance(val, bool):
+                    self.params[key] = "true" if val else "false"
+                elif isinstance(val, list):
+                    self.params[key] = ", ".join(str(v) for v in val)
+                else:
+                    self.params[key] = str(val)
+            else:
+                self.params[key] = p.get("default", "")
+
+        # Skip the output_key param — path is already set from the picker
+        start = 1 if params and params[0]["key"] == output_key else 0
+        self.param_idx = start
+        self.current_input = self.params.get(params[start]["key"], "") if start < len(params) else ""
+        self.state = STATE_PARAMS
 
     def start_run(self) -> None:
+        if self.current_scenario.get("type") in ("json-form", "edit-json-form"):
+            self._run_json_form()
+            return
+
         cmd, cwd = self.build_command()
         self.state = STATE_RUNNING
         self.output_lines = []
@@ -277,6 +384,27 @@ class Runner:
                 body.append("\n")
                 body.append(f"    {s.get('description', '')}\n", style="dim")
 
+        elif self.state == STATE_FILEPICK:
+            scenario = self.current_scenario
+            title = f"{self.current_tool['name']} › {scenario['name']}"
+            footer = "↑↓ navigate   Enter select   Esc back   q quit"
+            if not self.file_pick_list:
+                body.append("  No config files found.\n", style="dim")
+                body.append("  Create one with ", style="dim")
+                body.append("create-config", style="bold white dim")
+                body.append(" first.\n", style="dim")
+            else:
+                for i, path in enumerate(self.file_pick_list):
+                    sel = i == self.file_pick_idx
+                    name = Path(path).name
+                    if sel:
+                        r, g, b = _pride_color(phase)
+                        body.append("▶ ", style=Style(color=f"rgb({r},{g},{b})", bold=True))
+                        body.append(name + "\n", style="bold white")
+                    else:
+                        body.append("  ")
+                        body.append(name + "\n", style="dim")
+
         elif self.state == STATE_RUNNING:
             scenario = self.current_scenario
             title = f"{self.current_tool['name']} › {scenario['name']}"
@@ -343,8 +471,11 @@ class Runner:
                 self.scenario_idx = (self.scenario_idx + 1) % len(scenarios)
             elif key in ("\r", "\n"):
                 self.current_scenario = scenarios[self.scenario_idx]
+                stype = self.current_scenario.get("type", "command")
                 params = self.current_scenario.get("params", [])
-                if params:
+                if stype in ("pick-file", "edit-json-form"):
+                    self._enter_file_pick()
+                elif params:
                     self.params = {p["key"]: p.get("default", "") for p in params}
                     self.param_idx = 0
                     self.current_input = self.params.get(params[0]["key"], "")
@@ -367,6 +498,23 @@ class Runner:
                 self.current_input = self.current_input[:-1]
             elif len(key) == 1 and key.isprintable():
                 self.current_input += key
+
+        elif self.state == STATE_FILEPICK:
+            if key == "\x1b":
+                self.state = STATE_SCENARIOS
+            elif key in ("q", "Q"):
+                return "quit"
+            elif key == "\x1b[A" and self.file_pick_list:
+                self.file_pick_idx = (self.file_pick_idx - 1) % len(self.file_pick_list)
+            elif key == "\x1b[B" and self.file_pick_list:
+                self.file_pick_idx = (self.file_pick_idx + 1) % len(self.file_pick_list)
+            elif key in ("\r", "\n") and self.file_pick_list:
+                picked = self.file_pick_list[self.file_pick_idx]
+                if self.current_scenario.get("type") == "edit-json-form":
+                    self._enter_edit_form(picked)
+                else:
+                    self.params = {"path": picked}
+                    self.start_run()
 
         elif self.state == STATE_RUNNING:
             if self.run_status != "running":
